@@ -1,0 +1,104 @@
+--Check for duplicate post ids
+select count(*) as duplicate_post_id
+from social_media_data
+having count(*) > 1
+
+--checking of row count
+select count(*) as row_count_
+from social_media_data
+
+
+--Engagement rate by platform
+select platform,
+count(*) as total_post,
+sum(engagements) as total_engagaments,
+sum(reach) as total_reach,
+Round(AVG(reach),0) as avg_reach_per_post,
+Round( sum(engagements) *100 / Nullif (sum(reach),0),2) as engagement_rate,
+Rank() Over (order by sum(engagements) *100 / Nullif (sum(reach),0) desc) as rnk
+from social_media_data
+group by platform
+order by engagement_rate desc 
+
+
+--campaign ROAS analysis
+select campaign,
+sum(ad_spend_inr) as total_ad_spend,
+sum(revenue_generated_inr) as total_revenue_generated,
+Round(sum(revenue_generated_inr) / Nullif (sum(ad_spend_inr),0),2) as ROAS
+from social_media_data
+WHERE campaign != 'Organic / No Campaign'
+group by campaign
+order by ROAS desc
+
+
+--Check spend concentration — is one campaign eating the budget?
+SELECT
+    campaign,
+    ROUND(SUM(ad_spend_inr), 2)                                      AS total_spend_inr,
+    ROUND(SUM(ad_spend_inr) * 100.0 / SUM(SUM(ad_spend_inr)) OVER(), 2) AS spend_share_pct,
+    ROUND(SUM(revenue_generated_inr) / NULLIF(SUM(ad_spend_inr), 0), 2) AS roas
+FROM social_media_data
+WHERE campaign != 'Organic / No Campaign'
+GROUP BY campaign
+ORDER BY total_spend_inr DESC;
+
+--Check ROAS variance within each campaign — is it consistent or wildly swinging?
+SELECT
+    campaign,
+    ROUND(MIN(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2)  AS min_roas,
+    ROUND(MAX(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2)  AS max_roas,
+    ROUND(AVG(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2)  AS avg_roas,
+    ROUND(STDDEV(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2) AS roas_stddev
+FROM social_media_data
+WHERE ad_spend_inr > 0
+GROUP BY campaign
+ORDER BY roas_stddev DESC;
+
+--WHY Winter Warmers and Summer Launch are inconsistent
+SELECT
+    campaign,
+    platform,
+    content_type,
+    COUNT(*)                                                                  AS total_posts,
+    ROUND(AVG(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2)          AS avg_roas,
+    ROUND(STDDEV(revenue_generated_inr / NULLIF(ad_spend_inr, 0)), 2)       AS roas_stddev
+FROM social_media_data
+WHERE ad_spend_inr > 0
+AND campaign IN ('Winter Warmers', 'Summer Collection Launch')
+GROUP BY campaign, platform, content_type
+ORDER BY campaign, roas_stddev DESC;
+
+--The main Issue
+SELECT
+    post_id,
+    date,
+    ad_spend_inr,
+    revenue_generated_inr,
+    ROUND(revenue_generated_inr / NULLIF(ad_spend_inr, 0), 2) AS roas
+FROM social_media_data
+WHERE campaign = 'Summer Collection Launch'
+AND content_type = 'Thread'
+AND ad_spend_inr > 0
+ORDER BY roas DESC;
+
+--Paid vs organic
+SELECT
+    CASE
+        WHEN ad_spend_inr = 0 THEN 'Organic'
+        ELSE 'Paid'
+    END                                                                 AS post_type,
+    COUNT(*)                                                            AS total_posts,
+    ROUND(AVG(reach), 0)                                               AS avg_reach,
+    ROUND(AVG(engagements), 0)                                         AS avg_engagements,
+    ROUND(SUM(engagements) * 100.0 / NULLIF(SUM(reach), 0), 2)       AS engagement_rate_pct,
+    ROUND(AVG(new_followers_gained), 1)                                AS avg_followers_gained,
+    ROUND(AVG(clicks), 0)                                              AS avg_clicks,
+    ROUND(SUM(ad_spend_inr), 2)                                        AS total_spend_inr,
+    ROUND(SUM(revenue_generated_inr), 2)                               AS total_revenue_inr,
+    ROUND(
+        SUM(revenue_generated_inr) / NULLIF(SUM(ad_spend_inr), 0), 2
+    )                                                                   AS roas
+FROM social_media_data
+GROUP BY post_type
+ORDER BY post_type;
